@@ -67,42 +67,42 @@ for K in [50]:
 
 
 # #################### SSD+ score OOD detection #################
-# begin = time.time()
-# mean_feat = ftrain.mean(0)
-# std_feat = ftrain.std(0)
-# prepos_feat_ssd = lambda x: (x - mean_feat) / (std_feat + 1e-10)
-# ftrain_ssd = prepos_feat_ssd(ftrain)
-# ftest_ssd = prepos_feat_ssd(ftest)
-# food_ssd_all = {}
-# for ood_dataset in args.out_datasets:
-#     food_ssd_all[ood_dataset] = prepos_feat_ssd(food_all[ood_dataset])
+begin = time.time()
+mean_feat = ftrain.mean(0)
+std_feat = ftrain.std(0)
+prepos_feat_ssd = lambda x: (x - mean_feat) / (std_feat + 1e-10)
+ftrain_ssd = prepos_feat_ssd(ftrain)
+ftest_ssd = prepos_feat_ssd(ftest)
+food_ssd_all = {}
+for ood_dataset in args.out_datasets:
+    food_ssd_all[ood_dataset] = prepos_feat_ssd(food_all[ood_dataset])
+
+inv_sigma_cls = [None for _ in range(class_num)]
+covs_cls = [None for _ in range(class_num)]
+mean_cls = [None for _ in range(class_num)]
+cov = lambda x: np.cov(x.T, bias=True)
+for cls in range(class_num):
+    mean_cls[cls] = ftrain_ssd[label_log == cls].mean(0)
+    feat_cls_center = ftrain_ssd[label_log == cls] - mean_cls[cls]
+    inv_sigma_cls[cls] = np.linalg.pinv(cov(feat_cls_center))
 #
-# inv_sigma_cls = [None for _ in range(class_num)]
-# covs_cls = [None for _ in range(class_num)]
-# mean_cls = [None for _ in range(class_num)]
-# cov = lambda x: np.cov(x.T, bias=True)
-# for cls in range(class_num):
-#     mean_cls[cls] = ftrain_ssd[label_log == cls].mean(0)
-#     feat_cls_center = ftrain_ssd[label_log == cls] - mean_cls[cls]
-#     inv_sigma_cls[cls] = np.linalg.pinv(cov(feat_cls_center))
+def maha_score(X):
+    score_cls = np.zeros((class_num, len(X)))
+    for cls in range(class_num):
+        inv_sigma = inv_sigma_cls[cls]
+        mean = mean_cls[cls]
+        z = X - mean
+        score_cls[cls] = -np.sum(z * (inv_sigma.dot(z.T)).T, axis=-1)
+    return score_cls.max(0)
 #
-# def maha_score(X):
-#     score_cls = np.zeros((class_num, len(X)))
-#     for cls in range(class_num):
-#         inv_sigma = inv_sigma_cls[cls]
-#         mean = mean_cls[cls]
-#         z = X - mean
-#         score_cls[cls] = -np.sum(z * (inv_sigma.dot(z.T)).T, axis=-1)
-#     return score_cls.max(0)
+dtest = maha_score(ftest_ssd)
+all_results = []
+for name, food in food_ssd_all.items():
+    print(f"SSD+: Evaluating {name}")
+    dood = maha_score(food)
+    results = metrics.cal_metric(dtest, dood)
+    all_results.append(results)
 #
-# dtest = maha_score(ftest_ssd)
-# all_results = []
-# for name, food in food_ssd_all.items():
-#     print(f"SSD+: Evaluating {name}")
-#     dood = maha_score(food)
-#     results = metrics.cal_metric(dtest, dood)
-#     all_results.append(results)
-#
-# metrics.print_all_results(all_results, args.out_datasets, 'SSD+')
-# print(time.time() - begin)
+metrics.print_all_results(all_results, args.out_datasets, 'SSD+')
+print(time.time() - begin)
 
